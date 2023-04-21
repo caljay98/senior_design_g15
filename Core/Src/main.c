@@ -856,7 +856,7 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : ENC_1_Pin ENC_2_Pin */
   GPIO_InitStruct.Pin = ENC_1_Pin|ENC_2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
