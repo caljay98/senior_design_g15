@@ -153,7 +153,6 @@ const unsigned char ttable[7][4] = {
 
 
 // interrupt for the encoder
-// TODO this is not great, sometimes gives both
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	// Grab state of input pins.

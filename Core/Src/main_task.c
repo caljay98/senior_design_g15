@@ -37,7 +37,7 @@ SETTING_t settings[NUM_SETTINGS] =
 		{
 				.name = "Freq (Hz)",
 				.type = CONTINUOUS,
-				.cont_value = 1,
+				.cont_value = 1000,
 				.min = 1,
 				.max = 125000,
 				.num_digits = 6,
@@ -69,11 +69,11 @@ SETTING_t settings[NUM_SETTINGS] =
 				.current_digit = 0
 		},
 		{
-				.name = "Run Typ",
+				.name = "Running",
 				.type = TOGGLE,
 				.toggle_value = 0,
-				.setting1_name = "Cont",
-				.setting2_name = "SinG"
+				.setting1_name = "OFF",
+				.setting2_name = "ON"
 		}
 };
 
@@ -146,7 +146,7 @@ void main_task(void)
 				// the current cycle is complete
 				// TODO
 
-				set_neopixel(2, 0, 0, 0);
+				set_neopixel(2, MAX_LED_BRIGHTNESS, 0, 0);
 				send_neo_led_sequence();
 			}
 			else
@@ -237,7 +237,7 @@ static bool handle_input_events(INPUTS_t* events)
 
 	if (events->enable_click)
 	{
-		running = !running;
+		settings[RUN_TYPE_SETTING].toggle_value = !settings[RUN_TYPE_SETTING].toggle_value;;
 		retval = true;
 	}
 
@@ -246,7 +246,8 @@ static bool handle_input_events(INPUTS_t* events)
 	curr_bias_voltage = CONVERT_TO_FLOAT(settings[BIAS_VOLTAGE_SETTING].cont_value, settings[BIAS_VOLTAGE_SETTING].decimal_loc);;
 	curr_out_type = settings[OUT_MODE_SETTING].toggle_value;
 	curr_out_voltage = settings[OUT_VOLTAGE_SETTING].toggle_value;
-	curr_single = settings[RUN_TYPE_SETTING].toggle_value;
+	running = settings[RUN_TYPE_SETTING].toggle_value;
+	//curr_single = settings[RUN_TYPE_SETTING].toggle_value;
 
 	return retval;
 }

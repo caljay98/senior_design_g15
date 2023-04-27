@@ -53,11 +53,13 @@ uint32_t chan_4_out[2*BUFFER_REPEATS] = {0};
 #define TIMER_RELOAD_PERIOD_50ns 30 // 1.5us
 #define HIGH_BIT_FALL_TIME_50ns 15 // 0.75us
 #define LOW_BIT_FALL_TIME_50ns 6 // 0.30us
+#define OUT3_OFFSET_50ns 1 // output 3 is slightly delated compared to 1 and 2 in 0.45V mode
 extern TIM_HandleTypeDef htim1;
 
 // waveform for the 4 neopixel leds
 #define NEO_BUFFER_SIZE_PER_LED 24
-#define TOTAL_NEO_BUFFER_SIZE NUM_NEO_LEDS*NEO_BUFFER_SIZE_PER_LED
+#define NEO_RESET_CYCLES 2500 // lots of cycles of low to garuntee a reset cycle on the NEOPixel LEDs
+#define TOTAL_NEO_BUFFER_SIZE ((NUM_NEO_LEDS*NEO_BUFFER_SIZE_PER_LED)+NEO_RESET_CYCLES)
 uint16_t neo_out[TOTAL_NEO_BUFFER_SIZE] = {0};
 volatile bool send_done = true;
 
@@ -87,9 +89,6 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
 	uint32_t time_step_100ns;
 	HIGH_SPEED_MODIFICATION_t speed_mod = NO_MOD;
 
-	// wait for the current cycle to be finished before reconfiguring
-	// TODO
-
 	// disable all outputs so there is no strange behavior when switching values
 	disable_all_outputs();
 
@@ -110,12 +109,12 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
 	}
 
 	// set the correct period for tim2 and tim5
-	htim2.Init.Period = period_100ns - 1;
-	htim5.Init.Period = period_100ns - 1;
-	htim8.Init.Period = period_100ns - 1;
-	if (HAL_TIM_Base_Init(&htim2) != HAL_OK ||
-		HAL_TIM_Base_Init(&htim5) != HAL_OK ||
-		HAL_TIM_Base_Init(&htim8) != HAL_OK) return OUT_HAL_CONFIG_ERR;
+	__HAL_TIM_SET_AUTORELOAD(&htim2, period_100ns - 1);
+	__HAL_TIM_SET_AUTORELOAD(&htim5, period_100ns - 1);
+	__HAL_TIM_SET_AUTORELOAD(&htim8, period_100ns - 1);
+	__HAL_TIM_SET_COUNTER(&htim2, 0);
+	__HAL_TIM_SET_COUNTER(&htim5, 0);
+	__HAL_TIM_SET_COUNTER(&htim8, 0);
 
 	// find if there needs to be a modification because the frequency is too high
 	if (period_100ns < CHANGE_OUT4_DUTY_CUTOFF_100ns) speed_mod = CHANGE_OUT4_DUTY;
@@ -162,25 +161,45 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
 	default: return OUT_BAD_ENUM;
 	}
 
-	// take the rise and fall times and turn them into the actual DMA and PWM
-	// prescaler values
-	sConfigOC.OCMode = TIM_OCMODE_PWM1;
-	sConfigOC.Pulse = out1_fall_time;
+    // force OCxREF low at the start of the cycle for each timer output
+    // this is done with the FORCE_INACTIVE mode
+    sConfigOC.OCMode = TIM_OCMODE_FORCED_ACTIVE;
+    sConfigOC.Pulse = 0;
     sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
     sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-    if (HAL_TIM_PWM_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_1) != HAL_OK) return OUT_HAL_CONFIG_ERR;
+    HAL_TIM_OC_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_2);
+    HAL_TIM_OC_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_3);
+    HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3);
+    HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4);
+    sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
+    HAL_TIM_OC_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_2);
+    HAL_TIM_OC_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_3);
+    HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3);
+    HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4);
+
+    // based on which mode the first two outputs are in, we need to
+    // add a bit of an offset on output 3 to make it line up
+	if (out_voltage == LOW_VOLTAGE_450mV)
+	{
+		out3_rise_time -= OUT3_OFFSET_50ns;
+		out3_fall_time -= OUT3_OFFSET_50ns;
+	}
+
+	// take the rise and fall times and turn them into the actual DMA and PWM
+	// prescaler values
+	__HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_1, out1_fall_time);
+	__HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_2, out2_fall_time);
+	__HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_3, out3_fall_time);
+	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, out4_fall_time);
+	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, out4_fall_time);
     set_all_buffer(chan_2_out, out2_rise_time, out2_fall_time);
     set_all_buffer(chan_3_out, out3_rise_time, out3_fall_time);
     set_all_buffer(chan_4_out, out4_rise_time, out4_fall_time);
 
 	// TODO some code to make single-shot work
 
-    // TODO the first of the series of shots does not work great
-
-    // ensure the channels start in the correct state (low/high)
-    // TODO
-
 	// prime the first three outputs to start. These will not start until tim8 is started
+    __disable_irq();
     HAL_TIM_PWM_Start(&htim5, TIM_CHANNEL_1);
 	HAL_TIM_OC_Start_DMA(&htim5, TIM_CHANNEL_2, chan_2_out, 2*BUFFER_REPEATS);
 	HAL_TIM_OC_Start_DMA(&htim5, TIM_CHANNEL_3, chan_3_out, 2*BUFFER_REPEATS);
@@ -194,8 +213,8 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
 		HAL_TIM_OC_Start_DMA(&htim2, TIM_CHANNEL_4, chan_4_out, 2*BUFFER_REPEATS);
 	}
 
-
 	HAL_TIM_Base_Start(&htim8);
+	__enable_irq();
 
 	return OUT_SUCCESS;
 }
@@ -204,6 +223,11 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
 //  Turns off and resets all outputs
 void disable_all_outputs(void)
 {
+	// TODO something to wait for the sequence to end
+
+	__disable_irq();
+	HAL_TIM_Base_Stop(&htim5);
+	HAL_TIM_Base_Stop(&htim2);
 	HAL_TIM_Base_Stop(&htim8);
 	HAL_TIM_PWM_Stop(&htim5, TIM_CHANNEL_1);
 	HAL_TIM_OC_Stop_DMA(&htim5, TIM_CHANNEL_2);
@@ -211,9 +235,7 @@ void disable_all_outputs(void)
 	HAL_TIM_OC_Stop_DMA(&htim2, TIM_CHANNEL_3);
 	HAL_TIM_OC_Stop_DMA(&htim2, TIM_CHANNEL_4);
 	HAL_DAC_Stop(&hdac, DAC_CHANNEL_1);
-	__HAL_TIM_SET_COUNTER(&htim2, 0);
-	__HAL_TIM_SET_COUNTER(&htim5, 0);
-	__HAL_TIM_SET_COUNTER(&htim8, 0);
+	__enable_irq();
 }
 
 int8_t set_neopixel(uint8_t led_num, uint8_t red, uint8_t grn, uint8_t blu)
@@ -238,23 +260,16 @@ int8_t set_neopixel(uint8_t led_num, uint8_t red, uint8_t grn, uint8_t blu)
 	return OUT_SUCCESS;
 }
 
-// TODO sometimes this does not work and incorrect values
+
 void send_neo_led_sequence(void)
 {
-	TIM_OC_InitTypeDef sConfigOC = {0};
 	// make sure the sending is done
 	if (!send_done) return;
 
 	// make sure the first value in the preload register is 0 to ensure there is
 	// no effect from the first cycle before the DMA kicks in
-	sConfigOC.OCMode = TIM_OCMODE_PWM1;
-    sConfigOC.Pulse = 0;
-    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-    sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
-    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-    sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
-    sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-    HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1);
+	htim1.Instance->CCR1 = 0;
+	htim1.Instance->CNT = 0;
 
 	HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t*)neo_out, TOTAL_NEO_BUFFER_SIZE);
 	send_done = false;
@@ -267,6 +282,7 @@ void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
 		HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_1);
 		send_done = true;
 	}
+
 }
 
 // set_out4_voltage
