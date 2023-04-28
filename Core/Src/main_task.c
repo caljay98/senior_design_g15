@@ -7,10 +7,9 @@
 #include "cmsis_os.h"
 #include "user_input.h"
 #include "display.h"
+#include "serial.h"
 #include <math.h>
 #include <string.h>
-
-static bool handle_input_events(INPUTS_t* events);
 
 #define MAX_LED_BRIGHTNESS 50
 #define PACK(r, g, b) ((uint32_t)(r) << 16 | (uint32_t)(g) << 8 | (b))
@@ -22,6 +21,7 @@ static bool handle_input_events(INPUTS_t* events);
 uint8_t selected_setting = 0;
 bool selected = false;
 bool pending_change = false;
+bool pending_gui_change = false;
 
 // pending input events that need to be serviced
 INPUTS_t pending_input_events = {0};
@@ -62,10 +62,10 @@ SETTING_t settings[NUM_SETTINGS] =
 				.name = "Bias V",
 				.type = CONTINUOUS,
 				.cont_value = 0,
-				.min = -500,
-				.max = 500,
-				.num_digits = 3,
-				.decimal_loc = 2,
+				.min = -5000,
+				.max = 5000,
+				.num_digits = 4,
+				.decimal_loc = 3,
 				.current_digit = 0
 		},
 		{
@@ -109,8 +109,18 @@ void main_task(void)
 
 		// if there has been a change in desired configuration, update the
 		// outputs to match that. Also change the LEDs
-		if (pending_change)
+		if (pending_change || pending_gui_change)
 		{
+			if (pending_gui_change)
+			{
+				pending_gui_change = false;
+			}
+
+			if (pending_change)
+			{
+				sendCurrentConfiguration();
+			}
+
 			if (running)
 			{
 				enable_output_waveform(curr_period_100ns, curr_out_type,
@@ -168,7 +178,7 @@ void main_task(void)
 
 // handle_input_events
 //  returns true if there is a change to the config that needs to be updated
-static bool handle_input_events(INPUTS_t* events)
+bool handle_input_events(INPUTS_t* events)
 {
 	bool retval = false;
 	SETTING_t* curr_setting = settings + selected_setting;

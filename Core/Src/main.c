@@ -19,12 +19,14 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdint.h>
 #include "main_task.h"
 #include "display.h"
+#include "serial.h"
 
 /* USER CODE END Includes */
 
@@ -63,14 +65,18 @@ DMA_HandleTypeDef hdma_tim5_ch3_up;
 
 UART_HandleTypeDef huart4;
 
-PCD_HandleTypeDef hpcd_USB_OTG_FS;
-
 osThreadId mainTaskHandle;
 uint32_t mainTaskBuffer[ 1024 ];
 osStaticThreadDef_t mainTaskControlBlock;
 osThreadId displayTask_tasHandle;
 uint32_t displayTaskBuffer[ 1024 ];
 osStaticThreadDef_t displayTaskControlBlock;
+osThreadId serialHandle;
+uint32_t myTask03Buffer[ 1024 ];
+osStaticThreadDef_t myTask03ControlBlock;
+osMessageQId vComHandle;
+uint8_t vComBuffer[ 250 * sizeof( uint8_t ) ];
+osStaticMessageQDef_t vComControlBlock;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -79,7 +85,6 @@ osStaticThreadDef_t displayTaskControlBlock;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
-static void MX_USB_OTG_FS_PCD_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM3_Init(void);
@@ -91,6 +96,7 @@ static void MX_UART4_Init(void);
 static void MX_TIM8_Init(void);
 void mainTask_entry(void const * argument);
 void displayTask_entry(void const * argument);
+void start_serial(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -130,7 +136,6 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM2_Init();
-  MX_USB_OTG_FS_PCD_Init();
   MX_SPI2_Init();
   MX_I2C1_Init();
   MX_TIM3_Init();
@@ -156,6 +161,11 @@ int main(void)
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
 
+  /* Create the queue(s) */
+  /* definition and creation of vCom */
+  osMessageQStaticDef(vCom, 250, uint8_t, vComBuffer, &vComControlBlock);
+  vComHandle = osMessageCreate(osMessageQ(vCom), NULL);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
@@ -168,6 +178,10 @@ int main(void)
   /* definition and creation of displayTask_tas */
   osThreadStaticDef(displayTask_tas, displayTask_entry, osPriorityBelowNormal, 0, 1024, displayTaskBuffer, &displayTaskControlBlock);
   displayTask_tasHandle = osThreadCreate(osThread(displayTask_tas), NULL);
+
+  /* definition and creation of serial */
+  osThreadStaticDef(serial, start_serial, osPriorityNormal, 0, 1024, myTask03Buffer, &myTask03ControlBlock);
+  serialHandle = osThreadCreate(osThread(serial), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -780,41 +794,6 @@ static void MX_UART4_Init(void)
 }
 
 /**
-  * @brief USB_OTG_FS Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USB_OTG_FS_PCD_Init(void)
-{
-
-  /* USER CODE BEGIN USB_OTG_FS_Init 0 */
-
-  /* USER CODE END USB_OTG_FS_Init 0 */
-
-  /* USER CODE BEGIN USB_OTG_FS_Init 1 */
-
-  /* USER CODE END USB_OTG_FS_Init 1 */
-  hpcd_USB_OTG_FS.Instance = USB_OTG_FS;
-  hpcd_USB_OTG_FS.Init.dev_endpoints = 6;
-  hpcd_USB_OTG_FS.Init.speed = PCD_SPEED_FULL;
-  hpcd_USB_OTG_FS.Init.dma_enable = DISABLE;
-  hpcd_USB_OTG_FS.Init.phy_itface = PCD_PHY_EMBEDDED;
-  hpcd_USB_OTG_FS.Init.Sof_enable = DISABLE;
-  hpcd_USB_OTG_FS.Init.low_power_enable = DISABLE;
-  hpcd_USB_OTG_FS.Init.lpm_enable = DISABLE;
-  hpcd_USB_OTG_FS.Init.vbus_sensing_enable = DISABLE;
-  hpcd_USB_OTG_FS.Init.use_dedicated_ep1 = DISABLE;
-  if (HAL_PCD_Init(&hpcd_USB_OTG_FS) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USB_OTG_FS_Init 2 */
-
-  /* USER CODE END USB_OTG_FS_Init 2 */
-
-}
-
-/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -940,6 +919,8 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_mainTask_entry */
 void mainTask_entry(void const * argument)
 {
+  /* init code for USB_DEVICE */
+  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
   for(;;)
@@ -967,6 +948,25 @@ void displayTask_entry(void const * argument)
     osDelay(1);
   }
   /* USER CODE END displayTask_entry */
+}
+
+/* USER CODE BEGIN Header_start_serial */
+/**
+* @brief Function implementing the serial thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_start_serial */
+void start_serial(void const * argument)
+{
+  /* USER CODE BEGIN start_serial */
+  /* Infinite loop */
+  for(;;)
+  {
+	  runSerial();
+    osDelay(1);
+  }
+  /* USER CODE END start_serial */
 }
 
 /**
