@@ -104,7 +104,7 @@ def unpack_bytestream(bytestream):
 
     return freq, on_time, out_voltage, bias_v, running
 
-
+# Initialize the serial 
 ser = config_serial()
 # Initial handshake to get current settings from function generator
 start = b'\xAA'

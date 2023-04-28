@@ -169,13 +169,30 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
     sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
     HAL_TIM_OC_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_2);
     HAL_TIM_OC_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_3);
-    HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3);
-    HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4);
     sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
     HAL_TIM_OC_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_2);
     HAL_TIM_OC_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_3);
-    HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3);
-    HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4);
+
+    // if we are creating a positive voltage, force channel 4 low. If neg voltage
+    // force channel 3 high. Positive is active low
+	if (target_bias_voltage_V >= 0)
+	{
+		sConfigOC.OCMode = TIM_OCMODE_FORCED_INACTIVE;
+		HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3);
+	    HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4);
+
+	    sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
+		HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4);
+	}
+	else
+	{
+		sConfigOC.OCMode = TIM_OCMODE_FORCED_ACTIVE;
+		HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4);
+		HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3);
+
+		sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
+		HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3);
+	}
 
     // based on which mode the first two outputs are in, we need to
     // add a bit of an offset on output 3 to make it line up
@@ -204,13 +221,15 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
 	HAL_TIM_OC_Start_DMA(&htim5, TIM_CHANNEL_2, chan_2_out, 2*BUFFER_REPEATS);
 	HAL_TIM_OC_Start_DMA(&htim5, TIM_CHANNEL_3, chan_3_out, 2*BUFFER_REPEATS);
 
-	if (target_bias_voltage_V <= 0)
+	if (target_bias_voltage_V >= 0)
 	{
-		HAL_TIM_OC_Start_DMA(&htim2, TIM_CHANNEL_3, chan_4_out, 2*BUFFER_REPEATS);
+		HAL_TIM_OC_Start_DMA(&htim2, TIM_CHANNEL_4, chan_4_out, 2*BUFFER_REPEATS);
+		HAL_TIM_OC_Start(&htim2, TIM_CHANNEL_3);
 	}
 	else
 	{
-		HAL_TIM_OC_Start_DMA(&htim2, TIM_CHANNEL_4, chan_4_out, 2*BUFFER_REPEATS);
+		HAL_TIM_OC_Start_DMA(&htim2, TIM_CHANNEL_3, chan_4_out, 2*BUFFER_REPEATS);
+		HAL_TIM_OC_Start(&htim2, TIM_CHANNEL_4);
 	}
 
 	HAL_TIM_Base_Start(&htim8);
@@ -234,7 +253,7 @@ void disable_all_outputs(void)
 	HAL_TIM_OC_Stop_DMA(&htim5, TIM_CHANNEL_3);
 	HAL_TIM_OC_Stop_DMA(&htim2, TIM_CHANNEL_3);
 	HAL_TIM_OC_Stop_DMA(&htim2, TIM_CHANNEL_4);
-	HAL_DAC_Stop(&hdac, DAC_CHANNEL_1);
+//	HAL_DAC_Stop(&hdac, DAC_CHANNEL_1);
 	__enable_irq();
 }
 
@@ -289,9 +308,18 @@ void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
 //  sets the voltage for output 4 using the DA
 static OUTPUT_ERROR_t set_out4_voltage(float voltage)
 {
-	// TODO need to do the math on setting the actual voltage on the output
-	// of the circuit to match the desired voltage
-	if (voltage < 0) voltage *= -1;
+	// TODO configure correctly with the gain. Clamp for now
+	if (voltage < -3.3) voltage = -3.3;
+	if (voltage > 3.3) voltage = 3.3;
+
+	if (voltage < 0)
+	{
+		voltage *= -1;
+	}
+	else
+	{
+		voltage = 3.3f - voltage;
+	}
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, voltage*4096/3.3);
 	HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
 	return OUT_SUCCESS;
