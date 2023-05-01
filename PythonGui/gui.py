@@ -12,7 +12,7 @@ import threading
 
 # Add a global variable to keep track of the last update time
 time_last_updated = 0
-update_threshold = 0.5  # seconds
+update_threshold = 0.1  # seconds
 
 def config_serial():
     # Get a list of available COM ports and print them out for the user to select
@@ -120,6 +120,9 @@ initFreq, initOnTime, initOutVoltage, initBiasV, initRunning = unpack_bytestream
 print("Freq:", initFreq, "On Time:", initOnTime, "Out Voltage:", initOutVoltage, "Bias V:", initBiasV, "Running:", initRunning)
 
 def on_value_change(*args):
+    # In the event that we received an updated configuration from the function generator and we update the GUI, the GUI elements will call a
+    # callback function to update the function generator. However in this instance we do not need to update the function generator, as it was the
+    #device that requested the update. If the time_last_updated is within the last update_threshold, then do not update/send new data
     global time_last_updated
     elapsed_time = time.time() - time_last_updated
 
@@ -222,11 +225,6 @@ running_off.grid(column=1, row=4)
 running_on.grid(column=2, row=4)
 
 
-
-
-# app.mainloop()
-
-
 # Function to run in a separate thread
 def read_serial_data():
     buffer = bytearray()
@@ -266,7 +264,28 @@ def update_gui(freq, on_time, out_voltage, bias_v, running):
     # Set the time when the GUI was last updated
     time_last_updated = time.time()
 
-# Start the thread
+# Use this function to update the GUI and function generator from a python script (optional)
+def update_settings(freq, on_time, out_voltage, bias_v, running):
+    # Pack values into a bytestream
+    freq_bytes = struct.pack("<I", freq)  # 4 bytes for unsigned 32-bit frequency
+    on_time_byte = b'\x01' if on_time == "Long" else b'\x00'  # 1 byte for on_time
+    out_voltage_byte = b'\x01' if out_voltage == "5V" else b'\x00'  # 1 byte for out_voltage
+    bias_v_fixed = int((bias_v * 1000) + 5000)  # Convert to fixed-point with 1mV steps and 5000mV offset
+    bias_v_bytes = struct.pack("<H", bias_v_fixed)  # 2 bytes for BiasV
+    running_byte = b'\x01' if running == "ON" else b'\x00'  # 1 byte for running
+
+    bytestream = freq_bytes + on_time_byte + out_voltage_byte + bias_v_bytes + running_byte
+
+    print("Freq:", freq, "On Time:", on_time, "Out Voltage:", out_voltage, "Bias V:", bias_v, "Running:", running)
+    print("Bytestream:", bytestream.hex())
+    msg = escape_data(bytestream)
+    ser.write(msg)
+
+    # Update the GUI with the desired settings
+    update_gui(freq, on_time, out_voltage, bias_v, running)
+
+
+# Start the thread for serial communication
 thread = threading.Thread(target=read_serial_data, daemon=True)
 thread.start()
 
