@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "outputs.h"
+#include "user_input.h"
 
 #define MAX_SETTING_NAME_SIZE 128
 #define MAX_TOGGLE_SELECTION_SIZE 8
@@ -44,5 +45,6 @@ typedef struct
 // function prototypes
 void main_task(void);
 
+bool handle_input_events(INPUTS_t* events);
 
 #endif // MAIN_TASK_H
