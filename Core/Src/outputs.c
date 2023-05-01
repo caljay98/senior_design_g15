@@ -175,7 +175,7 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
 
     // if we are creating a positive voltage, force channel 4 low. If neg voltage
     // force channel 3 high. Positive is active low
-	if (target_bias_voltage_V >= 0)
+	if (target_bias_voltage_V > 0)
 	{
 		sConfigOC.OCMode = TIM_OCMODE_FORCED_INACTIVE;
 		HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3);
@@ -184,7 +184,7 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
 	    sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
 		HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4);
 	}
-	else
+	else if (target_bias_voltage_V < 0)
 	{
 		sConfigOC.OCMode = TIM_OCMODE_FORCED_ACTIVE;
 		HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4);
@@ -192,6 +192,13 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
 
 		sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
 		HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3);
+	}
+	else
+	{
+		sConfigOC.OCMode = TIM_OCMODE_FORCED_INACTIVE;
+		HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3);
+		sConfigOC.OCMode = TIM_OCMODE_FORCED_ACTIVE;
+		HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4);
 	}
 
     // based on which mode the first two outputs are in, we need to
@@ -205,10 +212,6 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
 	// take the rise and fall times and turn them into the actual DMA and PWM
 	// prescaler values
 	__HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_1, out1_fall_time);
-	__HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_2, out2_fall_time);
-	__HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_3, out3_fall_time);
-	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, out4_fall_time);
-	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, out4_fall_time);
     set_all_buffer(chan_2_out, out2_rise_time, out2_fall_time);
     set_all_buffer(chan_3_out, out3_rise_time, out3_fall_time);
     set_all_buffer(chan_4_out, out4_rise_time, out4_fall_time);
@@ -221,14 +224,19 @@ OUTPUT_ERROR_t enable_output_waveform(uint32_t period_100ns,
 	HAL_TIM_OC_Start_DMA(&htim5, TIM_CHANNEL_2, chan_2_out, 2*BUFFER_REPEATS);
 	HAL_TIM_OC_Start_DMA(&htim5, TIM_CHANNEL_3, chan_3_out, 2*BUFFER_REPEATS);
 
-	if (target_bias_voltage_V >= 0)
+	if (target_bias_voltage_V > 0)
 	{
-		HAL_TIM_OC_Start_DMA(&htim2, TIM_CHANNEL_4, chan_4_out, 2*BUFFER_REPEATS);
 		HAL_TIM_OC_Start(&htim2, TIM_CHANNEL_3);
+		HAL_TIM_OC_Start_DMA(&htim2, TIM_CHANNEL_4, chan_4_out, 2*BUFFER_REPEATS);
+	}
+	else if (target_bias_voltage_V < 0)
+	{
+		HAL_TIM_OC_Start(&htim2, TIM_CHANNEL_4);
+		HAL_TIM_OC_Start_DMA(&htim2, TIM_CHANNEL_3, chan_4_out, 2*BUFFER_REPEATS);
 	}
 	else
 	{
-		HAL_TIM_OC_Start_DMA(&htim2, TIM_CHANNEL_3, chan_4_out, 2*BUFFER_REPEATS);
+		HAL_TIM_OC_Start(&htim2, TIM_CHANNEL_3);
 		HAL_TIM_OC_Start(&htim2, TIM_CHANNEL_4);
 	}
 
